@@ -12,3 +12,6 @@ coverage/
 # Markdown documentation (keep README)
 *.md
 !README.md
+
+# Runtime secret files mounted into containers (never commit)
+secrets/
