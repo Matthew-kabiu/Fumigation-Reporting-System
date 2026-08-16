@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:20-alpine
+
+WORKDIR /workspace/backend
+
+ENV NODE_ENV=production
+
+COPY backend/package.json backend/package-lock.json ./
+RUN --mount=type=cache,id=fumivanta-backend-deploy-npm,target=/root/.npm,sharing=locked \
+    npm ci --omit=dev --prefer-offline --no-audit
+
+COPY backend/convex/ ./convex/
+
+RUN addgroup --system --gid 1001 convex \
+    && adduser --system --uid 1001 --ingroup convex convex \
+    && chown -R convex:convex /workspace/backend
+
+USER convex
+
+CMD ["npx", "convex", "deploy"]

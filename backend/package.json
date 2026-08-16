@@ -1,0 +1,19 @@
+{
+  "name": "@fumivanta/backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "convex dev",
+    "codegen": "convex codegen",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "convex": "1.44.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.24",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}

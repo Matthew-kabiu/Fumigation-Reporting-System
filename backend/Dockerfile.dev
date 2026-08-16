@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:20-bookworm-slim
+
+WORKDIR /workspace/backend
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/package.json backend/package-lock.json ./
+RUN --mount=type=cache,id=fumivanta-backend-dev-npm,target=/root/.npm,sharing=locked \
+    npm ci --prefer-offline --no-audit
+
+COPY backend/ ./
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD test -f convex/_generated/api.js && node -e "process.kill(1,0)"
+
+CMD ["npm", "run", "dev"]
