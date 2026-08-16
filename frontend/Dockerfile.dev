@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:20-alpine
+
+WORKDIR /workspace/frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN --mount=type=cache,id=fumivanta-frontend-dev-npm,target=/root/.npm,sharing=locked \
+    npm ci --prefer-offline --no-audit
+
+COPY frontend/ ./
+COPY backend/convex/ /workspace/backend/convex/
+
+CMD ["sh", "-c", "exec npm run dev -- --hostname \"$HOSTNAME\" --port \"$PORT\""]

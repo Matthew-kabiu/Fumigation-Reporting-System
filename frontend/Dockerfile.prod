@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:20-alpine AS dependencies
+
+WORKDIR /workspace
+
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+COPY backend/package.json backend/package-lock.json ./backend/
+
+RUN --mount=type=cache,id=fumivanta-frontend-prod-npm,target=/root/.npm,sharing=locked \
+    cd frontend && npm ci --prefer-offline --no-audit
+RUN --mount=type=cache,id=fumivanta-backend-prod-npm,target=/root/.npm,sharing=locked \
+    cd backend && npm ci --prefer-offline --no-audit
+
+FROM node:20-alpine AS builder
+
+WORKDIR /workspace
+
+ARG NEXT_TELEMETRY_DISABLED
+ARG NEXT_PUBLIC_APP_NAME
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_CONVEX_URL
+ARG NEXT_PUBLIC_CLERK_SIGN_IN_URL
+ARG NEXT_PUBLIC_CLERK_SIGN_UP_URL
+ARG NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL
+ARG NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL
+
+ENV NEXT_TELEMETRY_DISABLED=$NEXT_TELEMETRY_DISABLED \
+    NEXT_PUBLIC_APP_NAME=$NEXT_PUBLIC_APP_NAME \
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
+    NEXT_PUBLIC_CONVEX_URL=$NEXT_PUBLIC_CONVEX_URL \
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL=$NEXT_PUBLIC_CLERK_SIGN_IN_URL \
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL=$NEXT_PUBLIC_CLERK_SIGN_UP_URL \
+    NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=$NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL \
+    NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=$NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL
+
+COPY --from=dependencies /workspace/frontend/node_modules ./frontend/node_modules
+COPY --from=dependencies /workspace/backend/node_modules ./backend/node_modules
+COPY frontend/ ./frontend/
+COPY backend/convex/ ./backend/convex/
+
+WORKDIR /workspace/frontend
+
+RUN --mount=type=cache,id=fumivanta-next-build,target=/workspace/frontend/.next/cache,sharing=locked \
+    --mount=type=secret,id=clerk_secret_key \
+    CLERK_SECRET_KEY="$(cat /run/secrets/clerk_secret_key)" npm run build
+
+FROM node:20-alpine AS runner
+
+RUN addgroup --system --gid 1001 nodejs \
+    && adduser --system --uid 1001 --ingroup nodejs nextjs
+
+WORKDIR /app
+
+COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/public ./frontend/public
+COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /workspace/frontend/.next/static ./frontend/.next/static
+
+USER nextjs
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+
+CMD ["node", "frontend/server.js"]
