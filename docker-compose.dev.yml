@@ -1,0 +1,58 @@
+name: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME is required}
+
+services:
+  convex:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    init: true
+    env_file:
+      - .env.dev
+    command: ["/bin/sh", "-c", "mkdir -p \"$$CONVEX_TMPDIR\" && exec npm run dev"]
+    ports:
+      - "${CONVEX_HOST_PORT:?CONVEX_HOST_PORT is required}:${CONVEX_PORT:?CONVEX_PORT is required}"
+      - "${CONVEX_SITE_HOST_PORT:?CONVEX_SITE_HOST_PORT is required}:${CONVEX_SITE_PORT:?CONVEX_SITE_PORT is required}"
+    volumes:
+      - ./backend:/workspace/backend
+      - backend_node_modules:/workspace/backend/node_modules
+      - convex_cache:/root/.cache/convex
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch(process.env.CONVEX_URL).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.dev
+    init: true
+    env_file:
+      - .env.dev
+    environment:
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:?WATCHPACK_POLLING is required}
+    ports:
+      - "${FRONTEND_PORT:?FRONTEND_PORT is required}:${PORT:?PORT is required}"
+    volumes:
+      - ./frontend:/workspace/frontend
+      - ./backend:/workspace/backend:ro
+      - frontend_node_modules:/workspace/frontend/node_modules
+      - frontend_next_cache:/workspace/frontend/.next
+    depends_on:
+      convex:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:$${PORT}/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  backend_node_modules:
+  convex_cache:
+  frontend_node_modules:
+  frontend_next_cache:
