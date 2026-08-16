@@ -86,7 +86,7 @@ jobs:
           for e in .env.dev .env.prod; do
             [ -f "$e" ] || { : > "$e"; echo "stubbed missing $e"; }
           done
-          for f in docker-compose.dev.yml docker-compose.prod.yml; do
+          for f in docker-compose.dev.yml docker-compose.yml; do
             env_file="/tmp/$(basename "$f").env"
             make_env "$f" "$env_file"
             docker compose --env-file "$env_file" -f "$f" config >/dev/null

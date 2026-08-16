@@ -125,7 +125,7 @@ Production frontend and the one-shot Convex deploy profile:
 
 ```bash
 DOCKER_BUILDKIT=1 docker compose --env-file .env.prod \
-  -f docker-compose.prod.yml up --build
+  -f docker-compose.yml up --build
 ```
 
 Convex functions always run on a Convex deployment, never as a duplicate
