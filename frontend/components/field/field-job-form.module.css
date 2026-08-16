@@ -1,0 +1,72 @@
+.wide {
+  grid-column: 1 / -1;
+}
+
+.checkItem {
+  background: var(--paper);
+}
+
+.note {
+  display: grid;
+  font-size: 0.68rem;
+  font-weight: 800;
+  gap: 0.35rem;
+  padding: 0 0.7rem 0.7rem 3.15rem;
+  text-transform: uppercase;
+}
+
+.note textarea,
+.fileButton,
+.photoRow {
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+}
+
+.note textarea {
+  min-height: 3.5rem;
+  padding: 0.55rem;
+  resize: vertical;
+}
+
+.photoActions,
+.photoList {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.photoActions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.fileButton {
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 0.8rem;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.fileButton input {
+  display: none;
+}
+
+.photoRow {
+  align-items: center;
+  display: flex;
+  font-size: 0.75rem;
+  justify-content: space-between;
+  padding: 0.65rem 0.75rem;
+}
+
+.photoRow button {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+@media (max-width: 520px) {
+  .photoActions {
+    grid-template-columns: 1fr;
+  }
+}
