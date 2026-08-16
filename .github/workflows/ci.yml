@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --audit-level=high
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # The frontend imports generated Convex bindings through @backend/*, so the
+      # backend's node_modules must exist for typecheck to resolve them.
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --audit-level=high
+
+  compose:
+    name: Compose config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Values are placeholders: this only proves every variable the compose
+      # files reference is declared, never that the real values are correct.
+      - name: Validate dev and prod compose files
+        run: |
+          set -euo pipefail
+          # Placeholders must be type-valid: compose rejects a non-numeric port
+          # or a non-IP bind address before it ever checks the rest of the file.
+          make_env() {
+            grep -ohE '\$\{[A-Z0-9_]+' "$1" | grep -oE '[A-Z0-9_]{2,}' | sort -u \
+            | while read -r v; do
+                case "$v" in
+                  *BIND_IP|*_IP) echo "$v=127.0.0.1" ;;
+                  *PORT*)        echo "$v=3000" ;;
+                  *)             echo "$v=ci-placeholder" ;;
+                esac
+              done > "$2"
+          }
+          for f in docker-compose.dev.yml docker-compose.prod.yml; do
+            env_file="/tmp/$(basename "$f").env"
+            make_env "$f" "$env_file"
+            docker compose --env-file "$env_file" -f "$f" config >/dev/null
+            echo "OK: $f"
+          done
