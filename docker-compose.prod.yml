@@ -22,8 +22,14 @@ services:
       NEXT_TELEMETRY_DISABLED: ${NEXT_TELEMETRY_DISABLED:?NEXT_TELEMETRY_DISABLED is required}
       HOSTNAME: ${HOSTNAME:?HOSTNAME is required}
       PORT: ${PORT:?PORT is required}
+    # Bound to an explicit interface, never 0.0.0.0. Docker's iptables chains run
+    # BEFORE ufw, so a published port on the public NIC is reachable even with a
+    # ufw deny in place. Cloudflare Tunnel reaches this over loopback.
     ports:
-      - "${FRONTEND_PORT:?FRONTEND_PORT is required}:${PORT:?PORT is required}"
+      - "${FRONTEND_BIND_IP:?FRONTEND_BIND_IP is required}:${FRONTEND_PORT:?FRONTEND_PORT is required}:${PORT:?PORT is required}"
+    depends_on:
+      convex:
+        condition: service_healthy
     secrets:
       - clerk_secret_key
     command:
@@ -53,18 +59,84 @@ services:
           cpus: "0.25"
           memory: 128M
 
+  # Self-hosted Convex backend. The dev stack runs `npx convex dev` against an
+  # anonymous local deployment, which is not a production deployment target, so
+  # production runs the released backend image instead.
+  convex:
+    image: ghcr.io/get-convex/convex-backend:${CONVEX_IMAGE_TAG:?CONVEX_IMAGE_TAG is required}
+    init: true
+    environment:
+      INSTANCE_NAME: ${CONVEX_INSTANCE_NAME:?CONVEX_INSTANCE_NAME is required}
+      INSTANCE_SECRET: ${CONVEX_INSTANCE_SECRET:?CONVEX_INSTANCE_SECRET is required}
+      # Must be the public URLs the browser and Clerk see, not container names:
+      # they are baked into issued tokens and CORS responses.
+      CONVEX_CLOUD_ORIGIN: ${CONVEX_URL:?CONVEX_URL is required}
+      CONVEX_SITE_ORIGIN: ${CONVEX_SITE_URL:?CONVEX_SITE_URL is required}
+      CLERK_JWT_ISSUER_DOMAIN: ${CLERK_JWT_ISSUER_DOMAIN:?CLERK_JWT_ISSUER_DOMAIN is required}
+      RUST_LOG: ${CONVEX_LOG_LEVEL:?CONVEX_LOG_LEVEL is required}
+    ports:
+      - "${CONVEX_BIND_IP:?CONVEX_BIND_IP is required}:${CONVEX_HOST_PORT:?CONVEX_HOST_PORT is required}:${CONVEX_PORT:?CONVEX_PORT is required}"
+      - "${CONVEX_BIND_IP:?CONVEX_BIND_IP is required}:${CONVEX_SITE_HOST_PORT:?CONVEX_SITE_HOST_PORT is required}:${CONVEX_SITE_PORT:?CONVEX_SITE_PORT is required}"
+    volumes:
+      - convex_data:/convex/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3210/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2G
+        reservations:
+          cpus: "0.50"
+          memory: 512M
+
+  # Convex admin dashboard. Opt-in via `--profile dashboard`; it is an
+  # administrative surface, so it stays off unless deliberately started.
+  #
+  # Deliberately NOT behind Cloudflare Tunnel. It binds the Tailscale interface
+  # instead of loopback, so it is reachable only from the tailnet and never from
+  # the internet. Do not add a tunnel ingress entry for this service.
+  convex_dashboard:
+    profiles: ["dashboard"]
+    image: ghcr.io/get-convex/convex-dashboard:${CONVEX_IMAGE_TAG:?CONVEX_IMAGE_TAG is required}
+    init: true
+    environment:
+      NEXT_PUBLIC_DEPLOYMENT_URL: ${CONVEX_URL:?CONVEX_URL is required}
+    ports:
+      - "${CONVEX_DASHBOARD_BIND_IP:?CONVEX_DASHBOARD_BIND_IP is required}:${CONVEX_DASHBOARD_HOST_PORT:?CONVEX_DASHBOARD_HOST_PORT is required}:6791"
+    depends_on:
+      convex:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
   convex_deploy:
     profiles: ["deploy"]
     build:
       context: .
       dockerfile: backend/Dockerfile.deploy
     init: true
+    environment:
+      # convex 1.44 picks the self-hosted path from these two, not from
+      # CONVEX_DEPLOYMENT / CONVEX_DEPLOY_KEY, which target Convex Cloud.
+      CONVEX_SELF_HOSTED_URL: ${CONVEX_SELF_HOSTED_URL:?CONVEX_SELF_HOSTED_URL is required}
+    depends_on:
+      convex:
+        condition: service_healthy
     secrets:
-      - convex_deploy_key
+      - convex_admin_key
     command:
       - /bin/sh
       - -c
-      - export CONVEX_DEPLOY_KEY="$$(cat /run/secrets/convex_deploy_key)" && exec npx convex deploy
+      - export CONVEX_SELF_HOSTED_ADMIN_KEY="$$(cat /run/secrets/convex_admin_key)" && exec npx convex deploy
     restart: "no"
     read_only: true
     tmpfs:
@@ -74,8 +146,11 @@ services:
     security_opt:
       - no-new-privileges:true
 
+volumes:
+  convex_data:
+
 secrets:
   clerk_secret_key:
     environment: CLERK_SECRET_KEY
-  convex_deploy_key:
-    environment: CONVEX_DEPLOY_KEY
+  convex_admin_key:
+    environment: CONVEX_ADMIN_KEY
