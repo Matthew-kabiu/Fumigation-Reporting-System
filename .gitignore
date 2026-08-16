@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+coverage/
+.env
+.env.*
+.vercel/
+*.log
+*.tsbuildinfo
+.gstack/
+
+# Markdown documentation (keep README)
+*.md
+!README.md
