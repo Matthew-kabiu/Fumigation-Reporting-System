@@ -79,6 +79,13 @@ jobs:
                 esac
               done > "$2"
           }
+          # docker-compose.dev.yml declares `env_file: .env.dev`, which is
+          # gitignored and so never present on a runner. Compose fails on the
+          # missing file before it validates anything, so stub any that are
+          # absent. Interpolation still comes from --env-file below.
+          for e in .env.dev .env.prod; do
+            [ -f "$e" ] || { : > "$e"; echo "stubbed missing $e"; }
+          done
           for f in docker-compose.dev.yml docker-compose.prod.yml; do
             env_file="/tmp/$(basename "$f").env"
             make_env "$f" "$env_file"
